@@ -8,12 +8,40 @@ Repositorio del post-contenido de la Unidad 6 de Patrones de Diseño de Software
 
 El historial de commits refleja el proceso completo: código original → diagnóstico → refactorización, en ambas partes.
 
+## Estructura final
+
+```
+src/main/java/com/tienda/pedidos/
+├── PedidosServiceApplication.java
+├── config/RelojConfig.java                 ← Clock inyectable (horario de corte testeable)
+├── dto/                                    ← PedidoRequest, ItemPedido, ResultadoPedido
+├── validacion/                             ← Chain of Responsibility
+│   ├── ContextoPedido.java
+│   ├── ValidadorPedido.java                (eslabón abstracto)
+│   ├── ValidadorStock.java                 (eslabón 1)
+│   └── ValidadorCliente.java               (eslabón 2)
+├── descuento/                              ← Strategy
+│   ├── EstrategiaDescuento.java
+│   ├── DescuentoVip.java, DescuentoFrecuente.java, DescuentoEstandar.java
+│   ├── SelectorEstrategiaDescuento.java    (por tipo de cliente)
+│   ├── DescuentoBlackFriday.java, DescuentoCorporativo.java, DescuentoVolumen.java  (Parte 2)
+│   └── CalculadorDescuentoFinal.java       (Parte 2: combina cliente + campañas)
+└── service/
+    ├── GestorPedidos.java                  ← orquestador delgado
+    ├── PedidoRepository.java               ← persistencia JDBC
+    ├── NotificacionPedidoService.java      ← construcción y envío del correo
+    ├── EmailService.java                   (interfaz)
+    └── ConsolaEmailService.java            (implementación que imprime en consola)
+```
+
 ## Cómo ejecutar
 
 ```bash
 mvn test
 mvn spring-boot:run
 ```
+
+H2 se inicializa con `schema.sql` y `data.sql` (productos, inventario, clientes VIP/FRECUENTE/ESTANDAR/MOROSO/corporativo y una factura pendiente).
 
 ## Decisiones de diseño
 
@@ -59,4 +87,34 @@ La evidencia está en el commit `feat: agregar 3 campanas de descuento como esla
 - `GestorPedidos` pasó a encadenar 5 eslabones (línea 31) y a mezclar dos fuentes de descuento con `Math.max(descuentoTipoCliente, contexto.getDescuentoCampana())` (línea 49).
 - **Por qué es Golden Hammer:** se eligió Chain of Responsibility porque "ya funcionó" en la Parte 1 y los eslabones "ya sabían conectarse", no porque el nuevo problema tuviera forma de cadena.
 
-**Plan de corrección:** mover las tres campañas a `EstrategiaDescuento`, igual que los descuentos por tipo de cliente, y dejar en la cadena solo `ValidadorStock` y `ValidadorCliente`.
+**Patrón aplicado:** Strategy. Las campañas tienen exactamente la misma forma que `DescuentoVip` o `DescuentoFrecuente`: calculan un porcentaje a partir de datos del pedido o del cliente. Se modelaron como `DescuentoBlackFriday`, `DescuentoCorporativo` y `DescuentoVolumen` (implementan `EstrategiaDescuento`), y `CalculadorDescuentoFinal` combina el descuento por tipo de cliente con el mayor de las campañas activas. La regla "gana el mayor" ahora vive en un único método legible.
+
+**Alternativa descartada:** mantener las campañas en la cadena. Es precisamente la causa del antipatrón diagnosticado.
+
+**Código descartado eliminado, no comentado:** `PromocionBlackFriday`, `PromocionCorporativo`, `PromocionVolumen` y el campo `descuentoCampana` se borraron por completo. Dejarlos comentados "por si acaso" es el origen de un Lava Flow. Su referencia histórica queda en el historial de Git, no en el código activo.
+
+## Comparación antes / después
+
+Las mismas pruebas se ejecutan sin cambios sobre cada versión del código. Que sigan pasando demuestra que la salida es equivalente.
+
+| Caso de prueba | Resultado esperado | Original | Refactor Parte 1 | Golden Hammer | Corrección Parte 2 |
+|---|---|---|---|---|---|
+| Stock insuficiente (monitor x10) | Rechazado: "Stock insuficiente: producto 3" | ✔ | ✔ | ✔ | ✔ |
+| Cliente inexistente (999) | Rechazado: "Cliente no registrado" | ✔ | ✔ | ✔ | ✔ |
+| Moroso antes de las 20:00 | Rechazado: "Cliente con deuda pendiente: $350000.0" | ✔ | ✔ | ✔ | ✔ |
+| Moroso después de las 20:00 | Confirmado | ✔ | ✔ | ✔ | ✔ |
+| VIP, 4 teclados ($1.000.000) | 10% → total $1.071.000 | ✔ | ✔ | ✔ | ✔ |
+| Frecuente, 2 mouse ($300.000) | 4% → total $342.720 | ✔ | ✔ | ✔ | ✔ |
+| Corporativo con NIT, 1 teclado | 10% → total $267.750 | — | — | ✔ | ✔ |
+| Volumen, 21 mouse ($3.150.000) | 12% → total $3.298.680 | — | — | ✔ | ✔ |
+| Black Friday, estándar, 1 teclado | 25% → total $223.125 | — | — | ✔ | ✔ |
+| Black Friday + VIP, 4 teclados | gana 25% → total $892.500 | — | — | ✔ | ✔ |
+
+Pruebas: `GestorPedidosTest` (5 pedidos base), `ValidadorClienteTest` (horario de corte con reloj fijo), `CampanasDescuentoTest` y `CampanaBlackFridayTest` (campañas).
+
+## Herramientas utilizadas
+- Java 17, Spring Boot 3.2, Spring JDBC, H2, JUnit 5
+- Apache Maven, Git, GitHub
+
+## Conclusiones
+Diagnosticar un antipatrón exige evidencia del código (líneas, responsabilidades, niveles de anidamiento), no solo nombrarlo: fue ese conteo el que mostró que `procesarPedido` tenía seis razones para cambiar. La Parte 1 dejó una lección que la Parte 2 puso a prueba: un patrón se justifica por la forma del problema (Chain of Responsibility por orden y corte anticipado, Strategy por reglas intercambiables sin orden), no porque ya exista en el proyecto. Reutilizar la cadena para las campañas funcionaba, pero rompía el contrato de `ValidadorPedido` y escondía la regla de combinación en un campo mutable. Mantener las mismas pruebas en cada versión fue lo que permitió refactorizar dos veces con la seguridad de no cambiar el comportamiento observable.

@@ -11,6 +11,7 @@ INSERT INTO clientes (id, nombre, email, tipo_cliente) VALUES (101, 'Carlos VIP'
 INSERT INTO clientes (id, nombre, email, tipo_cliente) VALUES (102, 'Laura Frecuente', 'laura@frecuente.com', 'FRECUENTE');
 INSERT INTO clientes (id, nombre, email, tipo_cliente) VALUES (103, 'Mario Estandar', 'mario@estandar.com', 'ESTANDAR');
 INSERT INTO clientes (id, nombre, email, tipo_cliente) VALUES (104, 'Pedro Moroso', 'pedro@moroso.com', 'MOROSO');
+INSERT INTO clientes (id, nombre, email, tipo_cliente, nit) VALUES (105, 'Industrias Andinas SAS', 'compras@andinas.com', 'ESTANDAR', '900123456-1');
 
 -- Factura pendiente para el cliente moroso
 INSERT INTO facturas (cliente_id, monto, pagada) VALUES (104, 350000.0, false);
